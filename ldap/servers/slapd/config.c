@@ -145,7 +145,7 @@ slapd_bootstrap_config(const char *configdir)
     char *buf = 0;
     char *lastp = 0;
     char *entrystr = 0;
-    char tmpfile[MAXPATHLEN + 1];
+    char backupfile[MAXPATHLEN + 1];
 
     if (NULL == configdir) {
         slapi_log_err(SLAPI_LOG_ERR, "slapd_bootstrap_config",
@@ -153,8 +153,8 @@ slapd_bootstrap_config(const char *configdir)
         return rc; /* Fail */
     }
     PR_snprintf(configfile, sizeof(configfile), "%s/%s", configdir, CONFIG_FILENAME);
-    PR_snprintf(tmpfile, sizeof(tmpfile), "%s/%s.bak", configdir, CONFIG_FILENAME);
-    rc = dse_check_file(configfile, tmpfile);
+    PR_snprintf(backupfile, sizeof(backupfile), "%s/%s.bak", configdir, CONFIG_FILENAME);
+    rc = dse_check_file(configfile, backupfile);
     if (rc == 0) {
         /* EVERYTHING IS GOING WRONG, ARRGHHHHHH */
         slapi_log_err(SLAPI_LOG_ERR, "slapd_bootstrap_config", "No valid configurations can be accessed! You must restore %s from backup!\n", configfile);

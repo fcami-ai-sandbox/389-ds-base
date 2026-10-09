@@ -687,7 +687,11 @@ dse_updateNumSubOfParent(struct dse *pdse, const Slapi_DN *child, int op)
 
 /* check if a file is valid, or if a provided backup file can be used.
  * there is no way to determine if the file contents is usable, the only
- * checks that can be done is that the file exists and that it is not size 0
+ * checks that can be done is that the file exists and that it is not size 0.
+ * If the file is unusable, it is restored from backupname with slapi_copy()
+ * (a durable copy), so the backup is left in place. A leftover *.tmp file
+ * must never be passed as backupname: it can be a partial write.
+ * Returns 1 if the file is usable (possibly after a restore), 0 otherwise.
  */
 int
 dse_check_file(char *filename, char *backupname)
@@ -706,7 +710,7 @@ dse_check_file(char *filename, char *backupname)
         }
     } else {
         slapi_log_err(SLAPI_LOG_INFO, "dse_check_file",
-                      "The config %s can not be accessed. Attempting restore ... (reason: %d)\n", filename, rc);
+                      "The config %s can not be accessed. Attempting restore ... (reason: %d)\n", filename, PR_GetError());
     }
 
     if (backupname) {
@@ -723,10 +727,11 @@ dse_check_file(char *filename, char *backupname)
             return 0;
         }
 
-        rc = PR_Rename(backupname, filename);
-        if (rc != PR_SUCCESS) {
-            slapi_log_err(SLAPI_LOG_INFO, "dse_check_file",
-                      "The configuration file %s was NOT able to be restored from %s, error %d\n", filename, backupname, rc);
+        rc = slapi_copy(backupname, filename);
+        if (rc != 0) {
+            slapi_log_err(SLAPI_LOG_ERR, "dse_check_file",
+                      "The configuration file %s was NOT able to be restored from %s, error %d (%s)\n",
+                      filename, backupname, rc, slapd_system_strerror(rc));
             return 0;
         }
 
@@ -756,11 +761,14 @@ dse_read_one_file(struct dse *pdse, const char *filename, Slapi_PBlock *pb, int 
     slapi_pblock_get(pb, SLAPI_SCHEMA_FLAGS, &schema_flags);
 
     if ((NULL != pdse) && (NULL != filename)) {
-        /* check if the "real" file exists and cam be used, if not try tmp as backup */
-        rc = dse_check_file((char *)filename, pdse->dse_tmpfile);
-        if (!rc) {
-            rc = dse_check_file((char *)filename, pdse->dse_fileback);
+        /* A leftover tmp file can only be a partial write: never restore from it. */
+        if (pdse->dse_tmpfile && PR_GetFileInfo64(pdse->dse_tmpfile, &prfinfo) == PR_SUCCESS) {
+            slapi_log_err(SLAPI_LOG_WARNING, "dse_read_one_file",
+                          "The file %s is a leftover from an interrupted write and is ignored "
+                          "(it will be overwritten by the next write)\n", pdse->dse_tmpfile);
         }
+        /* check if the "real" file exists and can be used, if not try the backup */
+        rc = dse_check_file((char *)filename, pdse->dse_fileback);
 
         if ((rc = PR_GetFileInfo64(filename, &prfinfo)) != PR_SUCCESS) {
             slapi_log_err(SLAPI_LOG_ERR, "dse_read_one_file",
