@@ -33,6 +33,7 @@ import operator
 import subprocess
 import math
 import errno
+import tempfile
 from typing import Optional, Union
 from socket import getfqdn
 from ldapurl import LDAPUrl
@@ -2192,3 +2193,67 @@ def check_asan_report(inst, err_string):
         return True
 
     return False
+
+
+def write_file_atomic(path, data, mode=None):
+    """Replace the contents of a file atomically and durably.
+
+    The data is written to a temporary file in the same directory, flushed
+    and fsync'ed, then renamed over ``path``; the directory is fsync'ed
+    afterwards. A reader (or a crash) sees either the old or the new
+    contents, never a truncated or partial file.
+
+    If ``path`` exists, its permission bits and ownership are carried over
+    to the new file. Otherwise the file gets ``mode`` if given, or the mode
+    open(path, 'w') would have used (0666 & ~umask).
+
+    :param path: The file to write
+    :type path: str
+    :param data: The new contents
+    :type data: str
+    :param mode: Permission bits for a new file (and override for an
+                 existing one). Default: keep the existing file's mode.
+    :type mode: int
+    """
+    dirname = os.path.dirname(os.path.abspath(path))
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        st = None
+
+    fd, tmppath = tempfile.mkstemp(dir=dirname,
+                                   prefix='.' + os.path.basename(path) + '.')
+    try:
+        with os.fdopen(fd, 'w') as tmpfile:
+            tmpfile.write(data)
+            tmpfile.flush()
+            if mode is not None:
+                os.fchmod(tmpfile.fileno(), mode)
+            elif st is not None:
+                os.fchmod(tmpfile.fileno(), stat.S_IMODE(st.st_mode))
+            else:
+                # mkstemp creates 0600, open() would honour the umask
+                umask = os.umask(0)
+                os.umask(umask)
+                os.fchmod(tmpfile.fileno(), 0o666 & ~umask)
+            if st is not None:
+                try:
+                    os.fchown(tmpfile.fileno(), st.st_uid, st.st_gid)
+                except PermissionError:
+                    # Not root: the file is already ours, keep going
+                    if os.geteuid() == 0:
+                        raise
+            os.fsync(tmpfile.fileno())
+        os.replace(tmppath, path)
+    except BaseException:
+        try:
+            os.unlink(tmppath)
+        except OSError:
+            pass
+        raise
+
+    dirfd = os.open(dirname, os.O_RDONLY)
+    try:
+        os.fsync(dirfd)
+    finally:
+        os.close(dirfd)

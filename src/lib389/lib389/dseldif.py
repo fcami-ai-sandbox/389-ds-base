@@ -17,7 +17,7 @@ from datetime import timedelta
 from stat import ST_MODE
 # from lib389.utils import print_nice_time
 from lib389.paths import Paths
-from lib389.utils import ensure_str
+from lib389.utils import ensure_str, write_file_atomic
 from lib389._mapped_object_lint import DSLint
 from lib389.lint import (
     DSPERMLE0001,
@@ -118,8 +118,7 @@ class DSEldif(DSLint):
     def _update(self):
         """Update the dse.ldif with a new contents"""
 
-        with open(self.path, "w") as file_dse:
-            file_dse.write("".join(self._contents))
+        write_file_atomic(self.path, "".join(self._contents))
 
     def globalSubstitute(self, strfrom, strto):
         for i in range(0, len(self._contents)-1):

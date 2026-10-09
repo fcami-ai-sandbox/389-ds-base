@@ -52,7 +52,8 @@ from lib389.utils import (
     selinux_label_port,
     resolve_selinux_path,
     selinux_restorecon,
-    selinux_present)
+    selinux_present,
+    write_file_atomic)
 from lib389.backend import DatabaseConfig
 
 
@@ -834,38 +835,38 @@ class SetupDs(object):
             self.log.debug("Container detected setting db home directory to db directory.")
             slapd['db_home_dir'] = slapd['db_dir']
 
-        with open(os.path.join(slapd['config_dir'], 'dse.ldif'), 'w') as file_dse:
-            dse_fmt = dse.format(
-                schema_dir=slapd['schema_dir'],
-                lock_dir=slapd['lock_dir'],
-                tmp_dir=slapd['tmp_dir'],
-                cert_dir=slapd['cert_dir'],
-                ldif_dir=slapd['ldif_dir'],
-                bak_dir=slapd['backup_dir'],
-                run_dir=slapd['run_dir'],
-                inst_dir=slapd['inst_dir'],
-                log_dir=slapd['log_dir'],
-                fqdn=general['full_machine_name'],
-                ds_port=slapd['port'],
-                ds_user=slapd['user'],
-                rootdn=slapd['root_dn'],
-                instance_name=slapd['instance_name'],
-                ds_passwd=self._secure_password,  # We set our own password here, so we can connect and mod.
-                # This is because we never know the users input root password as they can validly give
-                # us a *hashed* input.
-                ds_suffix=ds_suffix,
-                config_dir=slapd['config_dir'],
-                db_dir=slapd['db_dir'],
-                db_home_dir=slapd['db_home_dir'],
-                db_lib=slapd['db_lib'],
-                ldapi_enabled="on",
-                ldapi=slapd['ldapi'],
-                ldapi_autobind="on",
-            )
-            file_dse.write(dse_fmt)
-            # Set minimum permission required by snmp ldap-agent
-            status = os.fstat(file_dse.fileno())
-            os.fchmod(file_dse.fileno(), status.st_mode | stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP)
+        dse_fmt = dse.format(
+            schema_dir=slapd['schema_dir'],
+            lock_dir=slapd['lock_dir'],
+            tmp_dir=slapd['tmp_dir'],
+            cert_dir=slapd['cert_dir'],
+            ldif_dir=slapd['ldif_dir'],
+            bak_dir=slapd['backup_dir'],
+            run_dir=slapd['run_dir'],
+            inst_dir=slapd['inst_dir'],
+            log_dir=slapd['log_dir'],
+            fqdn=general['full_machine_name'],
+            ds_port=slapd['port'],
+            ds_user=slapd['user'],
+            rootdn=slapd['root_dn'],
+            instance_name=slapd['instance_name'],
+            ds_passwd=self._secure_password,  # We set our own password here, so we can connect and mod.
+            # This is because we never know the users input root password as they can validly give
+            # us a *hashed* input.
+            ds_suffix=ds_suffix,
+            config_dir=slapd['config_dir'],
+            db_dir=slapd['db_dir'],
+            db_home_dir=slapd['db_home_dir'],
+            db_lib=slapd['db_lib'],
+            ldapi_enabled="on",
+            ldapi=slapd['ldapi'],
+            ldapi_autobind="on",
+        )
+        dse_path = os.path.join(slapd['config_dir'], 'dse.ldif')
+        write_file_atomic(dse_path, dse_fmt)
+        # Set minimum permission required by snmp ldap-agent
+        status = os.stat(dse_path)
+        os.chmod(dse_path, status.st_mode | stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP)
         os.chown(os.path.join(slapd['config_dir'], 'dse.ldif'), slapd['user_uid'], slapd['group_gid'])
 
         self.log.info("Create file system structures ...")

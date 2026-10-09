@@ -187,6 +187,35 @@ def test_search_filter_escape_bytes(input, result):
     assert search_filter_escape_bytes(input) == result
 
 
+def test_write_file_atomic(tmp_path):
+    path = str(tmp_path / "dse.ldif")
+
+    # New file: contents written, mode follows the umask like open()
+    write_file_atomic(path, "one\n")
+    with open(path) as f:
+        assert f.read() == "one\n"
+    umask = os.umask(0)
+    os.umask(umask)
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o666 & ~umask
+
+    # Existing file: replaced, mode preserved
+    os.chmod(path, 0o640)
+    write_file_atomic(path, "two\n")
+    with open(path) as f:
+        assert f.read() == "two\n"
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o640
+
+    # No temporary files are left behind
+    assert os.listdir(str(tmp_path)) == ["dse.ldif"]
+
+    # A failed write leaves the old file intact and cleans up
+    with pytest.raises(TypeError):
+        write_file_atomic(path, None)
+    with open(path) as f:
+        assert f.read() == "two\n"
+    assert os.listdir(str(tmp_path)) == ["dse.ldif"]
+
+
 if __name__ == "__main__":
     CURRENT_FILE = os.path.realpath(__file__)
     pytest.main("-s -v %s" % CURRENT_FILE)
