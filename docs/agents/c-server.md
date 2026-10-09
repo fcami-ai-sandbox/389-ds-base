@@ -243,4 +243,6 @@ Workflow: see the add-config-attribute skill (.agents/skills/add-config-attribut
 ## DSE file durability
 
 - `dse.c (dse_write_file_nolock)` writes `dse.ldif.tmp`, `PR_Sync`s it, fsyncs the current `dse.ldif`, links it to `dse.ldif.bak` (via `<bak>.tmp` + rename), renames the tmp over `dse.ldif`, then, if that rename succeeded, fsyncs the config directory once with `fileio.c (slapi_fsync_dir)`. A failure before the final rename leaves the old `dse.ldif` untouched.
+- `fileio.c (slapi_copy)` makes a real durable copy (tmp + fsync + rename + dir fsync), not a hard link; `fedse.c (fedse_create_startOK)` uses it for `dse.ldif.startOK`.
+- A missing or empty `dse.ldif` is restored from `dse.ldif.bak` by durable copy, so the backup survives; a leftover `dse.ldif.tmp` is never restored from (it only means an interrupted write) (`dse.c (dse_check_file)`, callers `dse_read_one_file` and `config.c (slapd_bootstrap_config)`).
 - Rule: never rename a file into place without fsyncing it first, and never fsync an `O_PATH` fd (it fails with EBADF, so the call is a silent no-op).
